@@ -5,9 +5,10 @@ must contain the prec=400 midpoint estimate.
 """
 
 import pytest
-from decimal import Decimal, localcontext
+from decimal import Decimal
 
 from scripts.c3a.certificate import (
+    assert_claim,
     certified_bound,
     prec400_estimate,
     build_certificate,
@@ -123,3 +124,42 @@ class TestCertificate:
             f"Cross-precision FAILED for noncontiguous case: "
             f"[{lo200}, {hi200}] does not contain {mid400}"
         )
+
+    def test_rounding_direction(self):
+        """theta_lo must not have rounded UP past the true value.
+
+        Computes theta_lo at prec=200 and a higher-precision floor estimate
+        at prec=400. The prec=200 theta_lo must be <= the prec=400 floor
+        (both are lower bounds; the higher-precision one is tighter).
+        Also asserts theta_hi >= the prec=400 estimate.
+        """
+        from scripts.c3a.construction import count_sumset, count_diffset
+        b, A, d, T = 11, [0, 2, 3, 4, 5], 4, 9
+        s = count_sumset(A, d, T)
+        dd = count_diffset(A, d, T)
+        mU = max_U(b, A, d, T)
+        q = 2 * mU + 1
+
+        lo200, hi200 = certified_bound(s, dd, q, prec=200)
+        lo400, hi400 = certified_bound(s, dd, q, prec=400)
+        mid400 = prec400_estimate(s, dd, q)
+
+        # The prec=200 lower bound must not exceed the prec=400 lower bound
+        # (higher precision should give a tighter — larger — floor).
+        assert lo200 <= lo400, (
+            f"Rounding direction: prec=200 theta_lo={lo200} > prec=400 theta_lo={lo400}. "
+            "theta_lo rounded UP past the true value."
+        )
+        # theta_hi must be >= the midpoint estimate
+        assert hi200 >= mid400, (
+            f"theta_hi={hi200} < prec=400 estimate={mid400}. Upper bound too tight."
+        )
+
+    def test_assert_claim(self):
+        """assert_claim: passes when claimed <= theta_lo, raises when claimed > theta_lo."""
+        # Passes: claimed 1.1 <= theta_lo 1.2
+        assert_claim(Decimal("1.2"), "1.1")
+
+        # Raises: claimed 1.2 > theta_lo 1.1
+        with pytest.raises(AssertionError):
+            assert_claim(Decimal("1.1"), "1.2")

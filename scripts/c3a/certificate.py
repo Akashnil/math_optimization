@@ -5,7 +5,7 @@ using directed-rounding decimal arithmetic (no float in the certified value).
 """
 
 import json
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from decimal import Decimal, getcontext, localcontext, ROUND_FLOOR, ROUND_CEILING
 from typing import Optional
 
@@ -14,7 +14,6 @@ from scripts.c3a.construction import (
     max_U,
     count_sumset,
     count_diffset,
-    StateBudgetExceeded,
 )
 
 # Default precision for the certificate (generous guard digits)
@@ -35,6 +34,20 @@ def ln_interval(n: int, pad: int = _DEFAULT_PAD) -> tuple[Decimal, Decimal]:
     return v - pad * ulp, v + pad * ulp
 
 
+def assert_claim(theta_lo: Decimal, claimed_str: str) -> None:
+    """Assert that Decimal(claimed_str) <= theta_lo.
+
+    Guards all doc edits: the claimed string must be a truncation of theta_lo
+    toward zero (produced via ROUND_FLOOR quantize), never a rounding up.
+    Raises AssertionError if the claimed value exceeds what the certificate proves.
+    """
+    if Decimal(claimed_str) > theta_lo:
+        raise AssertionError(
+            f"Claimed value {claimed_str} exceeds certified theta_lo={theta_lo}. "
+            "The claimed string must be produced by theta_lo.quantize(..., rounding=ROUND_FLOOR)."
+        )
+
+
 def certified_bound(
     s: int,
     dd: int,
@@ -47,16 +60,36 @@ def certified_bound(
     theta_lo is a certified lower bound on theta = 1 + (ln(dd)-ln(s)) / ln(q).
     theta_hi is a certified upper bound (for ranking/reporting).
     No math.log or float is used anywhere in this function.
+
+    Uses ROUND_FLOOR for theta_lo (directed rounding toward -inf, valid because
+    numerator (ld_lo - ls_hi) and denominator lq_hi are both positive — asserted
+    below) and ROUND_CEILING for theta_hi (directed rounding toward +inf).
     """
     with localcontext() as ctx:
         ctx.prec = prec
         ld_lo, ld_hi = ln_interval(dd, pad)
         ls_lo, ls_hi = ln_interval(s, pad)
         lq_lo, lq_hi = ln_interval(q, pad)
-        # Rigorous lower bound: numerator minimized (ld_lo - ls_hi), denominator maximized (lq_hi)
+
+        # Precondition: numerator (ld_lo - ls_hi) must be positive for the
+        # ROUND_FLOOR directed-rounding argument to be valid. If this were
+        # non-positive, ROUND_FLOOR of the quotient would not underestimate theta.
+        assert ld_lo > ls_hi, (
+            f"Positive-numerator precondition violated: ld_lo={ld_lo} <= ls_hi={ls_hi}. "
+            "theta = 1 + (ln(dd)-ln(s))/ln(q) <= 1, so this construction cannot certify "
+            "a meaningful lower bound above 1."
+        )
+
+        # Rigorous lower bound: numerator minimized (ld_lo - ls_hi), denominator maximized
+        # (lq_hi), then rounded DOWN (ROUND_FLOOR) so result is a genuine underestimate.
+        ctx.rounding = ROUND_FLOOR
         theta_lo = Decimal(1) + (ld_lo - ls_hi) / lq_hi
-        # Rigorous upper bound: numerator maximized (ld_hi - ls_lo), denominator minimized (lq_lo)
+
+        # Rigorous upper bound: numerator maximized (ld_hi - ls_lo), denominator minimized
+        # (lq_lo), then rounded UP (ROUND_CEILING) so result is a genuine overestimate.
+        ctx.rounding = ROUND_CEILING
         theta_hi = Decimal(1) + (ld_hi - ls_lo) / lq_lo
+
     return theta_lo, theta_hi
 
 

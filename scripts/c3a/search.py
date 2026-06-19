@@ -13,16 +13,13 @@ Per-candidate state cap: 200_000 states in count_diffset (abort if exceeded).
 
 import argparse
 import itertools
-import json
-import os
-import sys
 import time
 from decimal import Decimal, localcontext
 from pathlib import Path
 from typing import Optional
 
 from scripts.c3a.construction import no_carry_ok, StateBudgetExceeded
-from scripts.c3a.certificate import build_certificate, certified_bound, Certificate, prec400_estimate
+from scripts.c3a.certificate import build_certificate, Certificate
 from scripts.c3a.construction import max_U, count_sumset, count_diffset
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -47,32 +44,6 @@ RANK_PREC = 40
 DEFAULT_RESULTS_DIR = Path("/tmp/c3a-results")
 
 
-def _rank_estimate(A: list[int], d: int, T: int, b: int) -> Decimal:
-    """Fast Decimal-prec40 ranking estimate of theta for (b, A, d, T).
-
-    Uses max_U to compute q, then low-precision log estimates.
-    Does NOT use math.log. Returns 0 if an error occurs.
-    """
-    with localcontext() as ctx:
-        ctx.prec = RANK_PREC
-        try:
-            mU = max_U(b, A, d, T)
-            q = 2 * mU + 1
-            # We don't have s and dd yet — use a heuristic: estimate ratio
-            # For ranking only, compute approximate cardinalities via small-d extrapolation
-            # Actually we need s and dd for a meaningful estimate.
-            # Use prec-40 certified_bound on actual counts.
-            s = count_sumset(A, d, T)
-            dd = count_diffset(A, d, T, max_states=DEFAULT_MAX_STATES)
-            lo_d, hi_d = _ln40(dd)
-            lo_s, hi_s = _ln40(s)
-            lo_q, hi_q = _ln40(q)
-            theta_lo = Decimal(1) + (lo_d - hi_s) / hi_q
-            return theta_lo
-        except (StateBudgetExceeded, Exception):
-            return Decimal(0)
-
-
 def _ln40(n: int) -> tuple[Decimal, Decimal]:
     """ln interval at prec=40 for ranking."""
     with localcontext() as ctx:
@@ -94,42 +65,6 @@ def _enumerate_digit_sets(M: int) -> list[list[int]]:
             A = sorted([0] + list(combo) + [M])
             result.append(A)
     return result
-
-
-def _scan_dt_grid(
-    A: list[int],
-    b: int,
-    max_d: int,
-    max_T: int,
-) -> list[tuple[int, int, Decimal]]:
-    """Scan (d, T) grid for a fixed A, returning (d, T, ranking_estimate) triples.
-
-    Ranks by Decimal-prec40 estimate. Only includes cases where count_diffset
-    stays within DEFAULT_MAX_STATES.
-    """
-    results: list[tuple[int, int, Decimal]] = []
-    # Scan T/d ratio near the baseline ~1.875, but coarsely for speed
-    for d in range(2, max_d + 1, 2):  # step by 2 for speed
-        for T in range(d, max_T + 1, max(1, d // 4)):
-            with localcontext() as ctx:
-                ctx.prec = RANK_PREC
-                try:
-                    s = count_sumset(A, d, T)
-                    if s == 0:
-                        continue
-                    dd = count_diffset(A, d, T, max_states=DEFAULT_MAX_STATES)
-                    if dd == 0:
-                        continue
-                    mU = max_U(b, A, d, T)
-                    q = 2 * mU + 1
-                    lo_d, hi_d = _ln40(dd)
-                    lo_s, hi_s = _ln40(s)
-                    lo_q, hi_q = _ln40(q)
-                    theta_est = Decimal(1) + (lo_d - hi_s) / hi_q
-                    results.append((d, T, theta_est))
-                except StateBudgetExceeded:
-                    pass  # skip this (d,T) — state budget exceeded
-    return results
 
 
 def search(
@@ -309,7 +244,7 @@ def main() -> None:
         return
 
     best = certs[0]
-    print(f"\nBest certified result:")
+    print("\nBest certified result:")
     print(f"  A={best.A}, b={best.b}, d={best.d}, T={best.T}")
     print(f"  theta_lo = {best.theta_lo}")
     print(f"  theta_hi = {best.theta_hi}")
