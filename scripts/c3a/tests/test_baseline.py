@@ -1,11 +1,11 @@
 """Slow baseline reproduction test for PR #71 exact integers.
 
-COST: count_diffset at (d=80, T=154) takes approximately 17 minutes.
+COST: count_diffset at (d=90, T=172) takes approximately 25-35 minutes.
 This test is gated behind @pytest.mark.slow and is skipped by default.
 Run with: pytest scripts/c3a/tests/test_baseline.py --runslow
 
 The exact integers reproduced here are the authoritative certificate for
-the G2026b record: theta_lo >= 1.1741713.
+the G2026c record: theta_lo >= 1.1748992.
 """
 
 import pytest
@@ -17,7 +17,7 @@ from scripts.c3a.construction import (
     count_sumset,
     count_diffset,
 )
-from scripts.c3a.certificate import certified_bound, build_certificate
+from scripts.c3a.certificate import certified_bound
 from scripts.c3a.baseline import (
     BASELINE_B,
     BASELINE_A,
@@ -37,14 +37,14 @@ def pytest_configure(config):
 class TestBaselineReproduction:
     """Reproduce the full PR #71 exact integers.
 
-    EXPECTED RUNTIME: ~17 minutes (count_diffset dominates).
+    EXPECTED RUNTIME: ~25-35 minutes (count_diffset dominates).
     Skip unless --runslow is passed.
     """
 
     def test_baseline_sumset(self):
         """count_sumset reproduces the PR #71 |U+U| integer exactly.
 
-        This is fast (~20s).
+        This is fast (~30s).
         """
         assert no_carry_ok(BASELINE_B, BASELINE_A), "no-carry condition failed"
         s = count_sumset(BASELINE_A, BASELINE_D, BASELINE_T)
@@ -65,7 +65,7 @@ class TestBaselineReproduction:
     def test_baseline_diffset(self):
         """count_diffset reproduces the PR #71 |U-U| integer exactly.
 
-        WARNING: This takes approximately 17 minutes.
+        WARNING: This takes approximately 25-35 minutes.
         """
         dd = count_diffset(BASELINE_A, BASELINE_D, BASELINE_T)
         assert dd == BASELINE_DD, (
@@ -73,13 +73,13 @@ class TestBaselineReproduction:
         )
 
     def test_baseline_theta_lo(self):
-        """Full build_certificate for baseline gives theta_lo >= 1.1741713.
+        """Full build_certificate for baseline gives theta_lo >= 1.1748992.
 
-        WARNING: This takes approximately 17 minutes (diffset is the bottleneck).
+        WARNING: This takes approximately 25-35 minutes (diffset is the bottleneck).
         """
         mU = max_U(BASELINE_B, BASELINE_A, BASELINE_D, BASELINE_T)
         q = 2 * mU + 1
         theta_lo, theta_hi = certified_bound(BASELINE_S, BASELINE_DD, q)
-        assert theta_lo >= Decimal("1.1740744"), (
-            f"theta_lo={theta_lo} < 1.1740744"
+        assert theta_lo >= Decimal("1.1748992"), (
+            f"theta_lo={theta_lo} < 1.1748992"
         )
