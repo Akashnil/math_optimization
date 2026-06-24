@@ -1,13 +1,14 @@
-"""Runner for d=80 T-sweep certificate jobs (one T per invocation).
+"""Generalized single-(b, A, d, T) certificate runner for C_3a lower bounds.
 
-Each invocation runs ONE (b=21, A=record, d=80, T) certificate and writes
-the result to the results directory. Designed to be launched as a separate
-background job per T value — never loop multiple T values inline.
+One certificate per invocation. Designed for background-job parallel execution
+(one T per process). Reuses count_sumset, count_diffset, max_U, certified_bound,
+and assert_claim verbatim — no new counting or certificate math.
 
 Usage:
-    python -m scripts.c3a.tune_d80 --T 152
-    python -m scripts.c3a.tune_d80 --T 152 --results-dir /tmp/my-results
-    python -m scripts.c3a.tune_d80 --smoke
+    python -m scripts.c3a.tune --d 90 --T 172
+    python -m scripts.c3a.tune --d 90 --T 172 --results-dir /tmp/c3a-results
+    python -m scripts.c3a.tune --smoke
+    python -m scripts.c3a.tune --b 21 --A 0,2,3,4,5,6,7,8,9,10 --d 90 --T 172
 """
 
 import argparse
@@ -25,38 +26,64 @@ from scripts.c3a.construction import (
 
 # ── Module constants ───────────────────────────────────────────────────────────
 
-B = 21
-A = [0, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-D = 80
+# Record family defaults (b=21, A=[0,2..10])
+DEFAULT_B = 21
+DEFAULT_A = [0, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+# Current verified record — compare target for "BEATS RECORD" marker
 RECORD = Decimal("1.1741713")
 
 # Smoke-test parameters — tiny case that finishes in milliseconds
+SMOKE_B = DEFAULT_B
+SMOKE_A = DEFAULT_A
 SMOKE_D = 8
 SMOKE_T = 15
 
 
-def run_one(T: int, results_dir: Path) -> Certificate:
-    """Run one (b=B, A=A, d=D, T) certificate and write JSON to results_dir.
+def _output_filename(b: int, A: list[int], d: int, T: int) -> str:
+    """Return the JSON output filename for a given (b, A, d, T) tuple.
+
+    Uses d{d}_T{T}.json for the record family (b=21, A=[0,2..10]) to keep
+    filenames compatible with existing /tmp/c3a-results/d80_T*.json files.
+    Uses b{b}_d{d}_T{T}.json for non-record families to avoid collisions.
+    """
+    if b == DEFAULT_B and A == DEFAULT_A:
+        return f"d{d}_T{T}.json"
+    return f"b{b}_d{d}_T{T}.json"
+
+
+def run_one(
+    b: int,
+    A: list[int],
+    d: int,
+    T: int,
+    results_dir: Path,
+) -> Certificate:
+    """Run one (b, A, d, T) certificate and write JSON to results_dir.
 
     Prints flushed heartbeat lines so the job is never silent for the full
-    ~17-minute diffset duration. Calls count_sumset, count_diffset, and max_U
-    directly (not via build_certificate) to interleave progress output between
-    the fast sumset and the slow diffset.
+    diffset duration. Calls count_sumset, count_diffset, and max_U directly
+    (not via build_certificate) to interleave progress output between the fast
+    sumset and the slow diffset.
 
-    Raises ValueError if the no-carry condition fails (fail fast).
+    Raises ValueError if the no-carry condition fails (fail fast — before any
+    counting runs).
     """
-    results_dir.mkdir(parents=True, exist_ok=True)
-
-    if not no_carry_ok(B, A):
+    if not no_carry_ok(b, A):
         raise ValueError(
-            f"No-carry condition failed: b={B}, A={A}, max(A)={max(A)}, "
+            f"No-carry condition failed: b={b}, A={A}, max(A)={max(A)}, "
             f"requires b >= {2 * max(A) + 1}"
         )
 
-    print(f"[tune] start T={T} d={D} (expect ~17min diffset)...", flush=True)
+    results_dir.mkdir(parents=True, exist_ok=True)
+
+    print(
+        f"[tune] start b={b} A={A} d={d} T={T} (expect ~17min+ diffset)...",
+        flush=True,
+    )
     t_start = time.monotonic()
 
-    s = count_sumset(A, D, T)
+    s = count_sumset(A, d, T)
     t_sumset = time.monotonic()
     elapsed_sumset = t_sumset - t_start
     print(
@@ -64,19 +91,19 @@ def run_one(T: int, results_dir: Path) -> Certificate:
         flush=True,
     )
 
-    dd = count_diffset(A, D, T)
+    dd = count_diffset(A, d, T)
     t_diffset = time.monotonic()
     elapsed_diffset = t_diffset - t_sumset
 
-    mU = max_U(B, A, D, T)
+    mU = max_U(b, A, d, T)
     q = 2 * mU + 1
 
     theta_lo_dec, theta_hi_dec = certified_bound(s, dd, q)
 
     cert = Certificate(
-        b=B,
+        b=b,
         A=list(A),
-        d=D,
+        d=d,
         T=T,
         s=s,
         dd=dd,
@@ -95,7 +122,8 @@ def run_one(T: int, results_dir: Path) -> Certificate:
         flush=True,
     )
 
-    out_path = results_dir / f"d80_T{T}.json"
+    filename = _output_filename(b, A, d, T)
+    out_path = results_dir / filename
     out_path.write_text(cert.to_json())
     print(f"[tune] T={T} certificate written to {out_path}", flush=True)
 
@@ -105,25 +133,25 @@ def run_one(T: int, results_dir: Path) -> Certificate:
 def _run_smoke(results_dir: Path) -> Certificate:
     """Smoke-test mode: run a tiny (d=SMOKE_D, T=SMOKE_T) case.
 
-    Uses the same A and B but tiny d and T so it finishes in milliseconds.
+    Uses the default A and B but tiny d and T so it finishes in milliseconds.
     Verifies heartbeat lines are printed and JSON is written. Does NOT use
-    the full d=80 parameters — this is a fast correctness check only.
+    full-scale parameters — this is a fast correctness check only.
     """
     results_dir.mkdir(parents=True, exist_ok=True)
 
-    if not no_carry_ok(B, A):
+    if not no_carry_ok(SMOKE_B, SMOKE_A):
         raise ValueError(
-            f"No-carry condition failed: b={B}, A={A}, max(A)={max(A)}, "
-            f"requires b >= {2 * max(A) + 1}"
+            f"No-carry condition failed for smoke: b={SMOKE_B}, A={SMOKE_A}"
         )
 
     print(
-        f"[tune] SMOKE start T={SMOKE_T} d={SMOKE_D} (tiny case, fast)...",
+        f"[tune] SMOKE start b={SMOKE_B} A={SMOKE_A} d={SMOKE_D} T={SMOKE_T} "
+        f"(tiny case, fast)...",
         flush=True,
     )
     t_start = time.monotonic()
 
-    s = count_sumset(A, SMOKE_D, SMOKE_T)
+    s = count_sumset(SMOKE_A, SMOKE_D, SMOKE_T)
     t_sumset = time.monotonic()
     elapsed_sumset = t_sumset - t_start
     print(
@@ -132,18 +160,18 @@ def _run_smoke(results_dir: Path) -> Certificate:
         flush=True,
     )
 
-    dd = count_diffset(A, SMOKE_D, SMOKE_T)
+    dd = count_diffset(SMOKE_A, SMOKE_D, SMOKE_T)
     t_diffset = time.monotonic()
     elapsed_diffset = t_diffset - t_sumset
 
-    mU = max_U(B, A, SMOKE_D, SMOKE_T)
+    mU = max_U(SMOKE_B, SMOKE_A, SMOKE_D, SMOKE_T)
     q = 2 * mU + 1
 
     theta_lo_dec, theta_hi_dec = certified_bound(s, dd, q)
 
     cert = Certificate(
-        b=B,
-        A=list(A),
+        b=SMOKE_B,
+        A=list(SMOKE_A),
         d=SMOKE_D,
         T=SMOKE_T,
         s=s,
@@ -171,12 +199,44 @@ def _run_smoke(results_dir: Path) -> Certificate:
     return cert
 
 
+def _parse_A(s: str) -> list[int]:
+    """Parse a comma-separated string of integers into a sorted list.
+
+    Raises ValueError if any token is not a valid integer.
+    """
+    try:
+        return [int(tok.strip()) for tok in s.split(",")]
+    except ValueError as exc:
+        raise ValueError(f"--A must be comma-separated integers, got: {s!r}") from exc
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Run ONE d=80 certificate for a given T. "
+            "Run ONE (b, A, d, T) certificate. "
             "Launch each T as a separate background job."
         )
+    )
+    parser.add_argument(
+        "--b",
+        type=int,
+        default=DEFAULT_B,
+        help=f"Base (default: {DEFAULT_B}).",
+    )
+    parser.add_argument(
+        "--A",
+        type=str,
+        default=",".join(str(a) for a in DEFAULT_A),
+        help=(
+            f"Digit set as comma-separated ints "
+            f"(default: {','.join(str(a) for a in DEFAULT_A)})."
+        ),
+    )
+    parser.add_argument(
+        "--d",
+        type=int,
+        default=None,
+        help="Dimension (required unless --smoke).",
     )
     parser.add_argument(
         "--T",
@@ -211,10 +271,13 @@ def main() -> None:
         )
         return
 
+    if args.d is None:
+        parser.error("--d is required unless --smoke is specified.")
     if args.T is None:
         parser.error("--T is required unless --smoke is specified.")
 
-    cert = run_one(args.T, args.results_dir)
+    A = _parse_A(args.A)
+    cert = run_one(args.b, A, args.d, args.T, args.results_dir)
     theta_lo_dec = Decimal(cert.theta_lo)
     beats_record = theta_lo_dec > RECORD
 
@@ -224,7 +287,8 @@ def main() -> None:
 
     status = "BEATS RECORD" if beats_record else "below record"
     print(
-        f"[tune] DONE T={args.T} theta_lo={cert.theta_lo[:20]} "
+        f"[tune] DONE b={args.b} d={args.d} T={args.T} "
+        f"theta_lo={cert.theta_lo[:20]} "
         f"claimed_floor={claimed_str} [{status}]"
     )
 
