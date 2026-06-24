@@ -5,7 +5,7 @@ Fast checkpoint (default): Gerbicz worked example, A=[0,1,2,3], b=7, d=4, T=8.
   Runs in milliseconds.
 
 Full baseline (opt-in, ~17 min): PR #71 construction, b=21, A=[0,2,3,4,5,6,7,8,9,10],
-  d=80, T=150.
+  d=80, T=154.
   Expected integers are hardcoded below and must be reproduced exactly.
 """
 
@@ -27,11 +27,11 @@ from scripts.c3a.certificate import build_certificate, certified_bound
 BASELINE_B = 21
 BASELINE_A = [0, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 BASELINE_D = 80
-BASELINE_T = 150
+BASELINE_T = 154
 
-BASELINE_S = 75448362167176243488362019935078206851619643198150854886920234689186981134888
-BASELINE_DD = 195351744295266763842135520514417052287242446785296742323733058216909095059024572338564089814415
-BASELINE_MAX_U = 2995805288150731620410662946668903948341032736664352641511848666717243994160370658179324073879212562136150
+BASELINE_S = 597130362133498688344900538759091221981599964605490705452812019502078419618406
+BASELINE_DD = 1583022697814754823730226433460816281662151877595631959725969360255416773109712840757177539870935
+BASELINE_MAX_U = 2995805288150731620427416034073013045407712819639364547243511761614441608214402813704058986719974740854874
 
 # ── Gerbicz fast checkpoint constants ───────────────────────────────────────
 
@@ -79,9 +79,9 @@ def run_fast_checkpoint() -> None:
 def run_full_baseline() -> None:
     """Run the full PR #71 baseline reproduction. Slow (~17 min for diffset).
 
-    Asserts the three known exact integers and theta_lo >= 1.1740744.
+    Asserts the three known exact integers and theta_lo >= 1.1741713.
     """
-    print("=== Full baseline: PR #71 (b=21, A=[0,2..10], d=80, T=150) ===")
+    print("=== Full baseline: PR #71 (b=21, A=[0,2..10], d=80, T=154) ===")
     print("WARNING: count_diffset at this scale takes ~17 minutes.")
 
     assert no_carry_ok(BASELINE_B, BASELINE_A), "no-carry failed for baseline"
@@ -113,11 +113,11 @@ def run_full_baseline() -> None:
     print(f"theta_lo = {theta_lo}")
     print(f"theta_hi = {theta_hi}")
 
-    if theta_lo < Decimal("1.1740744"):
+    if theta_lo < Decimal("1.1741713"):
         raise AssertionError(
-            f"theta_lo={theta_lo} < 1.1740744, baseline reproduction failed"
+            f"theta_lo={theta_lo} < 1.1741713, baseline reproduction failed"
         )
-    print(f"theta_lo >= 1.1740744 CONFIRMED")
+    print(f"theta_lo >= 1.1741713 CONFIRMED")
     print(f"FULL BASELINE PASSED in {t2-t0:.1f}s total")
 
 

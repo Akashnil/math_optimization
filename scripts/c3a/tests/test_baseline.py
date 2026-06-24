@@ -1,11 +1,11 @@
 """Slow baseline reproduction test for PR #71 exact integers.
 
-COST: count_diffset at (d=80, T=150) takes approximately 17 minutes.
+COST: count_diffset at (d=80, T=154) takes approximately 17 minutes.
 This test is gated behind @pytest.mark.slow and is skipped by default.
 Run with: pytest scripts/c3a/tests/test_baseline.py --runslow
 
 The exact integers reproduced here are the authoritative certificate for
-the G2026 record: theta_lo >= 1.1740744.
+the G2026b record: theta_lo >= 1.1741713.
 """
 
 import pytest
@@ -73,7 +73,7 @@ class TestBaselineReproduction:
         )
 
     def test_baseline_theta_lo(self):
-        """Full build_certificate for baseline gives theta_lo >= 1.1740744.
+        """Full build_certificate for baseline gives theta_lo >= 1.1741713.
 
         WARNING: This takes approximately 17 minutes (diffset is the bottleneck).
         """
