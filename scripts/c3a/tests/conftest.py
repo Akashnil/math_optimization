@@ -2,7 +2,6 @@
 
 import itertools
 import pytest
-from typing import Callable
 
 from scripts.c3a.construction import no_carry_ok
 

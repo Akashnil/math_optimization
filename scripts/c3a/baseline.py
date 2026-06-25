@@ -4,8 +4,8 @@ Fast checkpoint (default): Gerbicz worked example, A=[0,1,2,3], b=7, d=4, T=8.
   Expected: |U|=221, |U+U|=2075, |U-U|=2307, 2*max+1=2381, theta~1.013631.
   Runs in milliseconds.
 
-Full baseline (opt-in, ~30-45 min): PR #71 construction, b=21, A=[0,2,3,4,5,6,7,8,9,10],
-  d=100, T=191.
+Full baseline (opt-in, ~60 min): PR #71 construction, b=21, A=[0,2,3,4,5,6,7,8,9,10],
+  d=110, T=210.
   Expected integers are hardcoded below and must be reproduced exactly.
 """
 
@@ -25,12 +25,12 @@ from scripts.c3a.certificate import certified_bound
 
 BASELINE_B = 21
 BASELINE_A = [0, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-BASELINE_D = 100
-BASELINE_T = 191
+BASELINE_D = 110
+BASELINE_T = 210
 
-BASELINE_S = 14465358843883206092647401157537086007814292767085032359767258248450860832976942620608848496443145
-BASELINE_DD = 2319168273404448639165746236805155432640851425009387803874942196768803090379009564827988182211334688564715898206493212899
-BASELINE_MAX_U = 833488242198168679597985997105082789719749545276319286176566500000775379533744946224695006690846563198554196819236924677550833607791
+BASELINE_S = 92705280150149557241060040925257650294778564084075401198748837829236511291636097166290731809667005452395284
+BASELINE_DD = 3681997220096007623545821167575964274432148557703482564789415590948047764144361920922788745648782524799208324807660608218695537922441
+BASELINE_MAX_U = 13902484676595421801943656171866957477127503091800781094317573708436576852200232171145266730195200624036858586484672026779509049316636702166160010
 
 # ── Gerbicz fast checkpoint constants ───────────────────────────────────────
 
@@ -76,12 +76,12 @@ def run_fast_checkpoint() -> None:
 
 
 def run_full_baseline() -> None:
-    """Run the full PR #71 baseline reproduction. Slow (~30-45 min for diffset).
+    """Run the full PR #71 baseline reproduction. Slow (~60 min for diffset).
 
-    Asserts the three known exact integers and theta_lo >= 1.1755004.
+    Asserts the three known exact integers and theta_lo >= 1.1760055.
     """
-    print("=== Full baseline: PR #71 (b=21, A=[0,2..10], d=100, T=191) ===")
-    print("WARNING: count_diffset at this scale takes ~30-45 minutes.")
+    print("=== Full baseline: PR #71 (b=21, A=[0,2..10], d=110, T=210) ===")
+    print("WARNING: count_diffset at this scale takes ~60 minutes.")
 
     assert no_carry_ok(BASELINE_B, BASELINE_A), "no-carry failed for baseline"
 
@@ -112,11 +112,11 @@ def run_full_baseline() -> None:
     print(f"theta_lo = {theta_lo}")
     print(f"theta_hi = {theta_hi}")
 
-    if theta_lo < Decimal("1.1755004"):
+    if theta_lo < Decimal("1.1760055"):
         raise AssertionError(
-            f"theta_lo={theta_lo} < 1.1755004, baseline reproduction failed"
+            f"theta_lo={theta_lo} < 1.1760055, baseline reproduction failed"
         )
-    print("theta_lo >= 1.1755004 CONFIRMED")
+    print("theta_lo >= 1.1760055 CONFIRMED")
     print(f"FULL BASELINE PASSED in {t2-t0:.1f}s total")
 
 
@@ -128,7 +128,7 @@ def main() -> None:
         "--full",
         "--slow",
         action="store_true",
-        help="Run the full PR #71 baseline (~30-45 min for diffset). Opt-in only.",
+        help="Run the full PR #71 baseline (~60 min for diffset). Opt-in only.",
     )
     args = parser.parse_args()
 

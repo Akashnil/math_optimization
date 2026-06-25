@@ -13,7 +13,6 @@ from scripts.c3a.construction import (
     count_diffset,
 )
 from scripts.c3a.certificate import build_certificate
-from scripts.c3a.tests.conftest import brute_force_sets
 
 
 class TestCounting:
