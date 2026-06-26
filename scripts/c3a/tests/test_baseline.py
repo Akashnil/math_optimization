@@ -1,11 +1,11 @@
 """Slow baseline reproduction test for PR #71 exact integers.
 
-COST: count_diffset at (d=110, T=210) takes approximately 60 minutes.
+COST: count_diffset at (d=120, T=228) takes approximately 70-100 minutes.
 This test is gated behind @pytest.mark.slow and is skipped by default.
 Run with: pytest scripts/c3a/tests/test_baseline.py --runslow
 
 The exact integers reproduced here are the authoritative certificate for
-the G2026e record: theta_lo >= 1.1760055.
+the G2026f record: theta_lo >= 1.1764374.
 """
 
 import pytest
@@ -37,7 +37,7 @@ def pytest_configure(config):
 class TestBaselineReproduction:
     """Reproduce the full PR #71 exact integers.
 
-    EXPECTED RUNTIME: ~60 minutes (count_diffset dominates).
+    EXPECTED RUNTIME: ~70-100 minutes (count_diffset dominates).
     Skip unless --runslow is passed.
     """
 
@@ -65,7 +65,7 @@ class TestBaselineReproduction:
     def test_baseline_diffset(self):
         """count_diffset reproduces the PR #71 |U-U| integer exactly.
 
-        WARNING: This takes approximately ~60 minutes.
+        WARNING: This takes approximately ~70-100 minutes.
         """
         dd = count_diffset(BASELINE_A, BASELINE_D, BASELINE_T)
         assert dd == BASELINE_DD, (
@@ -73,13 +73,13 @@ class TestBaselineReproduction:
         )
 
     def test_baseline_theta_lo(self):
-        """Full build_certificate for baseline gives theta_lo >= 1.1760055.
+        """Full build_certificate for baseline gives theta_lo >= 1.1764374.
 
-        WARNING: This takes approximately ~60 minutes (diffset is the bottleneck).
+        WARNING: This takes approximately ~70-100 minutes (diffset is the bottleneck).
         """
         mU = max_U(BASELINE_B, BASELINE_A, BASELINE_D, BASELINE_T)
         q = 2 * mU + 1
         theta_lo, theta_hi = certified_bound(BASELINE_S, BASELINE_DD, q)
-        assert theta_lo >= Decimal("1.1760055"), (
-            f"theta_lo={theta_lo} < 1.1760055"
+        assert theta_lo >= Decimal("1.1764374"), (
+            f"theta_lo={theta_lo} < 1.1764374"
         )
