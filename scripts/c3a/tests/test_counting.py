@@ -1,7 +1,10 @@
 """Tests for exact counting correctness in C_3a construction.
 
 Compares count_sumset / count_diffset against brute-force ground truth
-for small (b, A, d, T) cases.
+for small (b, A, d, T) cases, and against known goldens from the
+commit dfc1a7f (pre-interning baseline captured 2026-06-30 at d<=24
+via `git stash` + direct Python invocation, and from /tmp/c3a-results/d80_T154.json
+for record-scale).
 """
 
 import pytest
@@ -11,6 +14,7 @@ from scripts.c3a.construction import (
     max_U,
     count_sumset,
     count_diffset,
+    StateBudgetExceeded,
 )
 from scripts.c3a.certificate import build_certificate
 
@@ -108,3 +112,136 @@ class TestCounting:
         dp_dd = count_diffset(A, d, T)
         assert dp_s == bf_s
         assert dp_dd == bf_dd
+
+    # ── Interning-equivalence tests (new) ─────────────────────────────────────
+    # Golden values captured 2026-06-30 from the pre-interning implementation
+    # (git stash of working tree, direct invocation against HEAD~0 before this
+    # edit, A=[0,2,4,6,8,10] — the even-skip family used in small-d tests).
+    # Cross-checked: d<=16 also pass test_noncontiguous_various_T brute-force above.
+
+    def test_interning_equivalence_d8(self, brute_force):
+        """Interned DP matches old code for A=[0,2,4,6,8,10], d=8, T=15."""
+        A = [0, 2, 4, 6, 8, 10]
+        d, T = 8, 15
+        expected_s = 318450
+        expected_dd = 3417927
+        assert count_sumset(A, d, T) == expected_s
+        assert count_diffset(A, d, T) == expected_dd
+        # Cross-check d<=16 vs brute-force (b=21 minimal base)
+        _, bf_s, bf_dd = brute_force(21, A, d, T)
+        assert count_sumset(A, d, T) == bf_s
+        assert count_diffset(A, d, T) == bf_dd
+
+    def test_interning_equivalence_d12(self, brute_force):
+        """Interned DP matches old code for A=[0,2,4,6,8,10], d=12, T=23."""
+        A = [0, 2, 4, 6, 8, 10]
+        d, T = 12, 23
+        expected_s = 532129170
+        expected_dd = 26685445821
+        assert count_sumset(A, d, T) == expected_s
+        assert count_diffset(A, d, T) == expected_dd
+        _, bf_s, bf_dd = brute_force(21, A, d, T)
+        assert count_sumset(A, d, T) == bf_s
+        assert count_diffset(A, d, T) == bf_dd
+
+    def test_interning_equivalence_d16(self, brute_force):
+        """Interned DP matches old code for A=[0,2,4,6,8,10], d=16, T=30."""
+        A = [0, 2, 4, 6, 8, 10]
+        d, T = 16, 30
+        expected_s = 926623241874
+        expected_dd = 217841657982567
+        assert count_sumset(A, d, T) == expected_s
+        assert count_diffset(A, d, T) == expected_dd
+        _, bf_s, bf_dd = brute_force(21, A, d, T)
+        assert count_sumset(A, d, T) == bf_s
+        assert count_diffset(A, d, T) == bf_dd
+
+    def test_interning_equivalence_d20(self):
+        """Interned DP matches old code for A=[0,2,4,6,8,10], d=20, T=38."""
+        A = [0, 2, 4, 6, 8, 10]
+        d, T = 20, 38
+        expected_s = 1653392352583510
+        expected_dd = 1828119300076012701
+        assert count_sumset(A, d, T) == expected_s
+        assert count_diffset(A, d, T) == expected_dd
+
+    def test_interning_equivalence_d24(self):
+        """Interned DP matches old code for A=[0,2,4,6,8,10], d=24, T=46."""
+        A = [0, 2, 4, 6, 8, 10]
+        d, T = 24, 46
+        expected_s = 2998304927956358730
+        expected_dd = 15640068152192886067533
+        assert count_sumset(A, d, T) == expected_s
+        assert count_diffset(A, d, T) == expected_dd
+
+    # ── Budget-equivalence test (new) ─────────────────────────────────────────
+    # Proves the (se, bs_id) injectivity invariant: the new code raises
+    # StateBudgetExceeded at the same step and with the same nxt count as the
+    # old code. Captured 2026-06-30 from pre-interning code: at A=[0,2,4,6,8,10],
+    # d=8, T=15, the state dict peaks at 146 at step 3 (0-indexed), so
+    # max_states=145 fires with "size 146 exceeded max_states=145".
+
+    def test_budget_equivalence_fires_at_step3(self):
+        """StateBudgetExceeded fires at the same step/count as old code.
+
+        Old code (pre-interning): state dict at step 3 = 146 states.
+        max_states=145 => raises with 'State dict size 146 exceeded max_states=145'.
+        New code must reproduce this exactly (injectivity invariant).
+        """
+        A = [0, 2, 4, 6, 8, 10]
+        with pytest.raises(
+            StateBudgetExceeded,
+            match=r"State dict size 146 exceeded max_states=145",
+        ):
+            count_diffset(A, 8, 15, max_states=145)
+
+    def test_budget_equivalence_earlier_step(self):
+        """StateBudgetExceeded fires at step 2 (size 96) with max_states=50.
+
+        Old code: state dict at step 2 = 96, so max_states=50 fires with
+        'State dict size 96 exceeded max_states=50'. New code must match.
+        """
+        A = [0, 2, 4, 6, 8, 10]
+        with pytest.raises(
+            StateBudgetExceeded,
+            match=r"State dict size 96 exceeded max_states=50",
+        ):
+            count_diffset(A, 8, 15, max_states=50)
+
+    def test_budget_no_raise_when_cap_above_max(self):
+        """No StateBudgetExceeded when max_states is above actual peak.
+
+        Peak at d=8,T=15 is 195; max_states=200 should not raise.
+        """
+        A = [0, 2, 4, 6, 8, 10]
+        dd = count_diffset(A, 8, 15, max_states=200)
+        assert dd == 3417927
+
+    # ── Record-scale golden tests (new) ───────────────────────────────────────
+    # Expected values from /tmp/c3a-results/d80_T154.json (cert for current
+    # record G2026b, independently verified by code-reviewer in round 32).
+
+    def test_record_scale_sumset_d80(self):
+        """count_sumset for record family (A=[0..10 even+odd], d=80, T=154).
+
+        Expected s from /tmp/c3a-results/d80_T154.json, field 's'.
+        This matches the BASELINE_S constant in baseline.py.
+        sumset is fast (<1 min) so not marked slow.
+        """
+        A = [0, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        expected_s = 597130362133498688344900538759091221981599964605490705452812019502078419618406
+        s = count_sumset(A, 80, 154)
+        assert s == expected_s, f"sumset d=80 mismatch: got {s}"
+
+    @pytest.mark.slow
+    def test_record_scale_diffset_d80(self):
+        """count_diffset for record family (A=[0..10 even+odd], d=80, T=154).
+
+        Expected dd from /tmp/c3a-results/d80_T154.json, field 'dd'.
+        This matches the BASELINE_DD constant in baseline.py.
+        SLOW: ~10 min. Run only with --runslow / outside the fast suite.
+        """
+        A = [0, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        expected_dd = 1583022697814754823730226433460816281662151877595631959725969360255416773109712840757177539870935
+        dd = count_diffset(A, 80, 154)
+        assert dd == expected_dd, f"diffset d=80 mismatch: got {dd}"

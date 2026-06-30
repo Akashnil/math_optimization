@@ -101,32 +101,58 @@ def _build_diffset_evals(A: list[int]) -> dict[int, int]:
 
 
 def count_sumset(A: list[int], d: int, T: int) -> int:
-    """|U+U| via window-clipped bitset DP.
+    """|U+U| via window-clipped bitset DP with bitset interning + transition cache.
 
     b is not needed for counting once the no-carry condition is assumed;
     call no_carry_ok(b, A) before calling this function.
 
-    State: dict keyed by (sum_c, clipped-bitset) -> count of c-prefixes.
+    State: dict keyed by (sum_c, bs_id) -> count of c-prefixes.
+    Interning: each distinct clipped bitset is assigned a unique integer id.
+    The (sum_c, bs_id) state count is identical to the old (sum_c, clipped_bitset)
+    count because intern() is a bijection on clipped bitsets.
     """
     cvals = _build_sumset_cvals(A)
     clip_mask = (1 << (T + 1)) - 1
-    # Initial state: sum_c=0, reachable={0} (only digit-sum 0 reached), count 1
-    cur: dict[tuple[int, int], int] = {(0, 1): 1}
+
+    # Bitset interning: assign int id to each distinct clipped bitset.
+    # Initial bitset is 1 (only digit-sum 0 reached), clipped = 1.
+    id2bs: list[int] = [1]
+    bs2id: dict[int, int] = {1: 0}
+
+    def intern_bs(bs: int) -> int:
+        existing = bs2id.get(bs)
+        if existing is not None:
+            return existing
+        new_id = len(id2bs)
+        id2bs.append(bs)
+        bs2id[bs] = new_id
+        return new_id
+
+    # Per-call transition cache: (bs_id, ci_index) -> nb_id
+    cvals_list = list(cvals.items())
+    trans: dict[tuple[int, int], int] = {}
+
+    cur: dict[tuple[int, int], int] = {(0, 0): 1}
 
     for _ in range(d):
         nxt: dict[tuple[int, int], int] = defaultdict(int)
-        for (sc, bs), cnt in cur.items():
-            for ci, abits in cvals.items():
+        for (sc, bs_id), cnt in cur.items():
+            for ci_idx, (ci, abits) in enumerate(cvals_list):
                 nsc = sc + ci
                 if nsc > 2 * T:
                     continue  # prune: sum_c cannot exceed 2T
-                nb = _minkowski(bs, abits)
-                nb &= clip_mask  # WINDOW-CLIP before insert so equal states merge
-                nxt[(nsc, nb)] += cnt
+                cache_key = (bs_id, ci_idx)
+                nb_id = trans.get(cache_key)
+                if nb_id is None:
+                    nb = _minkowski(id2bs[bs_id], abits) & clip_mask
+                    nb_id = intern_bs(nb)
+                    trans[cache_key] = nb_id
+                nxt[(nsc, nb_id)] += cnt
         cur = dict(nxt)
 
     s = 0
-    for (sc, bs), cnt in cur.items():
+    for (sc, bs_id), cnt in cur.items():
+        bs = id2bs[bs_id]
         lo = max(0, sc - T)
         hi = T
         if lo > hi:
@@ -144,7 +170,7 @@ def count_diffset(
     *,
     max_states: Optional[int] = None,
 ) -> int:
-    """|U-U| via window-clipped bitset DP with sum_e pruning.
+    """|U-U| via window-clipped bitset DP with sum_e pruning + bitset interning.
 
     b is not needed for counting once the no-carry condition is assumed.
     max_states: if the state dict grows beyond this, raise StateBudgetExceeded.
@@ -154,19 +180,42 @@ def count_diffset(
     (2) Prune dead sum_e values: if no valid final sum_e is reachable, drop prefix.
     (3) State merging is automatic: clip-before-insert ensures equal clipped bitsets
         hash equal and their counts are summed.
+    (4) Bitset interning + transition cache: each distinct clipped bitset is
+        assigned a unique int id. The (se, bs_id) state count is identical to
+        the old (se, clipped_bitset) count because intern() is a bijection on
+        clipped bitsets (injectivity invariant). The max_states cap applies to
+        len(nxt) — the per-step (se, bs_id) count — NOT to len(id2bs).
     """
     evals = _build_diffset_evals(A)
     mA = max(A)
     clip_mask = (1 << (T + 1)) - 1
 
-    cur: dict[tuple[int, int], int] = {(0, 1): 1}
+    # Bitset interning: assign int id to each distinct clipped bitset.
+    # Initial bitset is 1 (only digit-sum 0 reached), clipped = 1.
+    id2bs: list[int] = [1]
+    bs2id: dict[int, int] = {1: 0}
+
+    def intern_bs(bs: int) -> int:
+        existing = bs2id.get(bs)
+        if existing is not None:
+            return existing
+        new_id = len(id2bs)
+        id2bs.append(bs)
+        bs2id[bs] = new_id
+        return new_id
+
+    # Per-call transition cache: (bs_id, ei_index) -> nb_id
+    evals_list = list(evals.items())
+    trans: dict[tuple[int, int], int] = {}
+
+    cur: dict[tuple[int, int], int] = {(0, 0): 1}
 
     for step in range(d):
         remaining = d - step - 1  # digits left after this step
         nxt: dict[tuple[int, int], int] = defaultdict(int)
 
-        for (se, bs), cnt in cur.items():
-            for ei, abits in evals.items():
+        for (se, bs_id), cnt in cur.items():
+            for ei_idx, (ei, abits) in enumerate(evals_list):
                 nse = se + ei
                 # Prune: check if any final sum_e in [nse - mA*remaining, nse + mA*remaining]
                 # can satisfy the window condition (sum_e in [-T, T])
@@ -175,9 +224,13 @@ def count_diffset(
                 if se_min > T or se_max < -T:
                     continue  # dead prefix
 
-                nb = _minkowski(bs, abits)
-                nb &= clip_mask  # WINDOW-CLIP before insert
-                nxt[(nse, nb)] += cnt
+                cache_key = (bs_id, ei_idx)
+                nb_id = trans.get(cache_key)
+                if nb_id is None:
+                    nb = _minkowski(id2bs[bs_id], abits) & clip_mask
+                    nb_id = intern_bs(nb)
+                    trans[cache_key] = nb_id
+                nxt[(nse, nb_id)] += cnt
 
         if max_states is not None and len(nxt) > max_states:
             raise StateBudgetExceeded(
@@ -187,7 +240,8 @@ def count_diffset(
         cur = dict(nxt)
 
     dd = 0
-    for (se, bs), cnt in cur.items():
+    for (se, bs_id), cnt in cur.items():
+        bs = id2bs[bs_id]
         lo = max(0, se)
         hi = min(T, T + se)
         if lo > hi:
